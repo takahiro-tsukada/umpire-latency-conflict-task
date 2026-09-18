@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Umpire Latency Conflict Task (ULCT)</title>
+<style>
+  :root {
+    --bg-color: #121212;
+    --card-bg: #1e1e1e;
+    --text-color: #ffffff;
+    --accent-safe: #20c997;
+    --accent-out: #ff3333;
+  }
+  body {
+    margin: 0;
+    padding: 20px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 90vh;
+    overflow: hidden;
+  }
+  
+  .shake {
+    animation: shake-anim 0.08s infinite;
+  }
+  @keyframes shake-anim {
+    0% { transform: translate(3px, 5px) rotate(0deg); }
+    20% { transform: translate(-5px, -3px) rotate(-1deg); }
+    40% { transform: translate(-3px, 3px) rotate(1deg); }
+    60% { transform: translate(4px, 1px) rotate(0deg); }
+    80% { transform: translate(1px, -4px) rotate(1deg); }
+    100% { transform: translate(-2px, 2px) rotate(-1deg); }
+  }
+
+  .container {
+    background-color: var(--card-bg);
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.7);
+    width: 90%;
+    max-width: 650px;
+    text-align: center;
+    border: 1px solid #333;
+  }
+  
+  button {
+    background-color: #0d6efd;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    font-size: 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    margin: 10px;
+    font-weight: bold;
+  }
+  button:hover { background-color: #0b5ed7; }
+  
+  input[type="text"], select {
+    padding: 12px;
+    font-size: 22px;
+    border-radius: 6px;
+    border: 1px solid #444;
+    background: #2b2b2b;
+    color: white;
+    text-align: center;
+    margin: 10px 0;
+    width: 80%;
+    letter-spacing: 2px;
+  }
+  
+  #digit-display {
+    font-size: 110px;
+    font-weight: bold;
+    height: 130px;
+    line-height: 130px;
+    margin: 15px 0;
+    color: #ffc107;
+    text-shadow: 0 0 10px rgba(255,193,7,0.3);
+  }
+  
+  .scoreboard {
+    display: flex;
+    justify-content: space-around;
+    background: #0a0a0a;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    border: 1px solid #222;
+  }
+  .score-val { font-size: 26px; font-weight: bold; color: #0dcaf0; }
+
+  #judgment-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100vw; height: 100vh;
+    background: rgba(0,0,0,0.95);
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+  }
+  
+  .flash-red {
+    background-color: #ff0000 !important;
+  }
+
+  .thinking-text {
+    color: #ffc107;
+    font-size: 36px;
+    font-weight: bold;
+    animation: pulse 1s infinite alternate;
+  }
+  @keyframes pulse {
+    0% { opacity: 0.3; transform: scale(0.98); }
+    100% { opacity: 1; transform: scale(1.02); }
+  }
+
+  .safe-text { font-size: 90px; color: var(--accent-safe); font-weight: 900; letter-spacing: 2px; }
+  .out-skull { font-size: 140px; color: var(--accent-out); text-shadow: 0 0 30px #ff0000; }
+  .out-text { font-size: 90px; font-weight: 900; color: var(--accent-out); }
+  
+  .config-group { margin: 15px 0; text-align: left; display: inline-block; }
+  .config-group label { font-size: 14px; color: #aaa; display: block; margin-bottom: 5px; }
+</style>
+</head>
+<body>
+
+<div class="container" id="main-card">
+  <!-- Setup Screen -->
+  <div id="screen-setup">
+    <h1 style="font-size:32px; color:#ffc107;">UMPIRE TEST</h1>
+    <p style="color:#bbb;">Judgment Latency Conflict Task</p>
+    
+    <div class="config-group">
+      <label>Match Mode:</label>
+      <select id="mode-select" onchange="toggleCpuOptions()">
+        <option value="2p">2 Players (Human vs Human)</option>
+        <option value="cpu">VS CPU</option>
+      </select>
+    </div><br>
+
+    <div class="config-group">
+      <label>Span Direction (Dummy Task Setup):</label>
+      <select id="direction-select">
+        <option value="forward">Forward Mode</option>
+        <option value="backward">Backward Mode</option>
+      </select>
+    </div><br>
+
+    <div id="cpu-options" class="config-group" style="display:none;">
+      <label>CPU Difficulty:</label>
+      <select id="cpu-diff">
+        <option value="easy">Easy</option>
+        <option value="normal" selected>Normal</option>
+        <option value="hard">Hard</option>
+      </select>
+    </div><br>
+
+    <button onclick="startGame()">Start Paradigm</button>
+  </div>
+
+  <!-- Game Screen -->
+  <div id="screen-game" style="display:none;">
+    <div class="scoreboard">
+      <div>P1 Score: <span id="p1-score" class="score-val">0</span></div>
+      <div>P2 Score: <span id="p2-score" class="score-val">0</span></div>
+    </div>
+    <h3 id="turn-indicator">Player 1's Turn</h3>
+    <p id="mode-prompt" style="color:#888; font-size:14px; margin:0;"></p>
+    
+    <div id="digit-display">Ready</div>
+    
+    <button id="btn-action" onclick="handleAction()">Press Enter (Start)</button>
+    
+    <div id="input-area" style="display:none;">
+      <input type="text" id="user-input" placeholder="Enter Digits" autocomplete="off" maxlength="30"><br>
+      <button onclick="submitAnswer()">Submit (Enter)</button>
+    </div>
+  </div>
+
+  <!-- Result Screen -->
+  <div id="screen-result" style="display:none;">
+    <h1>Experiment Complete</h1>
+    <div id="final-results"></div><br>
+    <button onclick="downloadCSV()">Export Data for SPSS Analysis (.csv)</button>
+    <button onclick="location.reload()">Return to Menu</button>
+  </div>
+</div>
+
+<!-- Judgment Overlay (Main Conflict Manipulator) -->
+<div id="judgment-overlay">
+  <div id="thinking-label" class="thinking-text">Umpire Deliberating...</div>
+  <div id="judgment-content"></div>
+</div>
+
+<script>
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playBeep(freq = 880, duration = 0.05, vol = 0.1) {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.frequency.value = freq;
+  gain.gain.value = vol;
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function playOneUnitAudio() {
+  const intervals = [1000, 800, 600, 400, 200];
+  const freqs = [880, 800, 720, 640, 560];
+  let timeOffset = 0;
+  for(let i = 0; i < 5; i++) {
+    setTimeout(() => playBeep(freqs[i], 0.08, 0.12), timeOffset);
+    timeOffset += intervals[i];
+  }
+}
+
+function playSafeSound() {
+  playBeep(523.25, 0.1, 0.2);
+  setTimeout(() => playBeep(659.25, 0.15, 0.2), 100);
+  setTimeout(() => playBeep(783.99, 0.3, 0.2), 200);
+}
+
+function playOutSound() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  
+  const osc1 = audioCtx.createOscillator();
+  const gain1 = audioCtx.createGain();
+  osc1.type = 'sawtooth';
+  osc1.frequency.setValueAtTime(180, audioCtx.currentTime);
+  osc1.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + 0.7);
+  gain1.gain.setValueAtTime(0.9, audioCtx.currentTime);
+  gain1.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.7);
+  
+  const osc2 = audioCtx.createOscillator();
+  const gain2 = audioCtx.createGain();
+  osc2.type = 'square';
+  osc2.frequency.setValueAtTime(212, audioCtx.currentTime);
+  gain2.gain.setValueAtTime(0.6, audioCtx.currentTime);
+  gain2.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.6);
+
+  osc1.connect(gain1); gain1.connect(audioCtx.destination);
+  osc2.connect(gain2); gain2.connect(audioCtx.destination);
+
+  osc1.start(); osc2.start();
+  osc1.stop(audioCtx.currentTime + 0.7);
+  osc2.stop(audioCtx.currentTime + 0.6);
+}
+
+let gameMode = '2p', cpuDiff = 'normal', spanDirection = 'forward';
+let currentPlayer = 1;
+let scores = { 1: 0, 2: 0 };
+let currentSequence = [], gameState = 'IDLE', totalTurns = 0;
+const maxTurns = 6;
+let logData = [];
+
+function toHalfWidth(str) {
+  return str.replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xfee0));
+}
+
+function toggleCpuOptions() {
+  document.getElementById('cpu-options').style.display = 
+    (document.getElementById('mode-select').value === 'cpu') ? 'inline-block' : 'none';
+}
+
+function startGame() {
+  gameMode = document.getElementById('mode-select').value;
+  cpuDiff = document.getElementById('cpu-diff').value;
+  spanDirection = document.getElementById('direction-select').value;
+  
+  document.getElementById('screen-setup').style.display = 'none';
+  document.getElementById('screen-game').style.display = 'block';
+  
+  document.getElementById('mode-prompt').textContent = 
+    spanDirection === 'forward' ? 'Mode: Forward Span' : 'Mode: Backward Span';
+    
+  resetTurn();
+}
+
+function resetTurn() {
+  gameState = 'IDLE';
+  currentSequence = [];
+  document.getElementById('digit-display').textContent = 'Ready';
+  document.getElementById('btn-action').style.display = 'inline-block';
+  document.getElementById('btn-action').textContent = 'Press Enter (Start)';
+  document.getElementById('input-area').style.display = 'none';
+  document.getElementById('user-input').value = '';
+  
+  const pName = (gameMode === 'cpu' && currentPlayer === 2) ? `CPU (${cpuDiff.toUpperCase()})` : `Player ${currentPlayer}`;
+  document.getElementById('turn-indicator').textContent = `${pName}'s Turn`;
+
+  if (gameMode === 'cpu' && currentPlayer === 2) runCpuTurn();
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    if (gameState === 'IDLE' || gameState === 'MEMORIZING') handleAction();
+    else if (gameState === 'INPUT') submitAnswer();
+  }
+});
+
+function handleAction() {
+  if (gameMode === 'cpu' && currentPlayer === 2) return;
+  if (gameState === 'IDLE') {
+    gameState = 'MEMORIZING';
+    document.getElementById('btn-action').textContent = 'Press Enter (Next Digit)';
+    if(!document.getElementById('btn-stop')) {
+      const stopBtn = document.createElement('button');
+      stopBtn.id = 'btn-stop';
+      stopBtn.textContent = 'STOP (Submit Memory)';
+      stopBtn.style.backgroundColor = '#dc3545';
+      stopBtn.onclick = stopMemorizing;
+      document.getElementById('btn-action').after(stopBtn);
+    }
+    nextDigit();
+  } else if (gameState === 'MEMORIZING') {
+    nextDigit();
+  }
+}
+
+function nextDigit() {
+  playBeep(880, 0.05, 0.1);
+  const num = Math.floor(Math.random() * 10);
+  currentSequence.push(num);
+  document.getElementById('digit-display').textContent = num;
+}
+
+function stopMemorizing() {
+  if (gameState !== 'MEMORIZING') return;
+  gameState = 'INPUT';
+  const stopBtn = document.getElementById('btn-stop');
+  if(stopBtn) stopBtn.remove();
+  document.getElementById('digit-display').textContent = '？';
+  document.getElementById('btn-action').style.display = 'none';
+  document.getElementById('input-area').style.display = 'block';
+  document.getElementById('user-input').focus();
+}
+
+function submitAnswer() {
+  const rawInput = document.getElementById('user-input').value.trim();
+  const userInput = toHalfWidth(rawInput);
+  
+  let targetSequence = currentSequence.join('');
+  if (spanDirection === 'backward') {
+    targetSequence = currentSequence.slice().reverse().join('');
+  }
+
+  const isCorrect = (userInput === targetSequence);
+  
+  // 矛盾判定の割り当てロジック (メイン実験変数)
+  let units = 1;
+  let isContradiction = false;
+  const rand = Math.random();
+
+  if (rand < 0.15) {
+    units = 2; // Neutral Condition
+    isContradiction = false;
+  } else {
+    isContradiction = Math.random() < 0.5;
+    if (isCorrect) {
+      // 正解時：矛盾(長遅延=3unit) vs 非矛盾(短遅延=1unit)
+      units = isContradiction ? 3 : 1;
+    } else {
+      // 不正解時：矛盾(短遅延=1unit) vs 非矛盾(長遅延=3unit)
+      units = isContradiction ? 1 : 3;
+    }
+  }
+
+  processJudgment(isCorrect, units, isContradiction);
+}
+
+function processJudgment(isCorrect, units, isContradiction) {
+  document.getElementById('input-area').style.display = 'none';
+  
+  const overlay = document.getElementById('judgment-overlay');
+  const thinkingLabel = document.getElementById('thinking-label');
+  const content = document.getElementById('judgment-content');
+  
+  content.innerHTML = '';
+  thinkingLabel.style.display = 'block';
+  overlay.style.display = 'flex';
+
+  const totalTime = units * 4000;
+
+  for (let i = 0; i < units; i++) {
+    setTimeout(() => playOneUnitAudio(), i * 4000);
+  }
+
+  setTimeout(() => {
+    thinkingLabel.style.display = 'none';
+
+    // メイン変数をSPSSデータ構造の最優先項目に配置
+    logData.push({
+      Trial: logData.length + 1,
+      ConflictCondition: (units === 2) ? 'Neutral' : (isContradiction ? 'Contradiction' : 'Congruent'),
+      LatencyUnits: units,
+      LatencyMs: totalTime,
+      Accuracy: isCorrect ? 1 : 0,
+      Subject: currentPlayer,
+      SpanDirection: spanDirection,
+      DigitLength: currentSequence.length
+    });
+
+    if (isCorrect) {
+      playSafeSound();
+      content.innerHTML = `<div class="safe-text">SAFE !</div>`;
+    } else {
+      playOutSound();
+      content.innerHTML = `<div class="out-skull">☠</div><div class="out-text">OUT !!</div>`;
+      
+      // 不正解かつ即判定（短遅延）という強い矛盾衝撃時の演出
+      if (isContradiction && units === 1) {
+        document.body.classList.add('flash-red', 'shake');
+        setTimeout(() => document.body.classList.remove('flash-red', 'shake'), 600);
+      }
+    }
+
+    if (isCorrect) {
+      scores[currentPlayer] += currentSequence.length;
+    }
+    updateScoreboard();
+
+    setTimeout(() => {
+      overlay.style.display = 'none';
+      totalTurns++;
+      if (totalTurns >= maxTurns) endGame();
+      else {
+        currentPlayer = (currentPlayer === 1) ? 2 : 1;
+        resetTurn();
+      }
+    }, 2200);
+
+  }, totalTime);
+}
+
+function updateScoreboard() {
+  document.getElementById('p1-score').textContent = scores[1];
+  document.getElementById('p2-score').textContent = scores[2];
+}
+
+function runCpuTurn() {
+  let targetDigits = (cpuDiff === 'easy') ? 5 : (cpuDiff === 'normal' ? 7 : 9);
+  gameState = 'MEMORIZING';
+  let count = 0;
+  
+  const interval = setInterval(() => {
+    nextDigit();
+    count++;
+    if (count >= targetDigits) {
+      clearInterval(interval);
+      setTimeout(() => {
+        let makeError = (cpuDiff === 'easy' && Math.random() < 0.3) || (cpuDiff === 'normal' && Math.random() < 0.15);
+        let seq = spanDirection === 'backward' ? currentSequence.slice().reverse() : currentSequence;
+        let cpuInput = seq.join('') + (makeError ? '9' : '');
+        document.getElementById('user-input').value = cpuInput;
+        submitAnswer();
+      }, 1000);
+    }
+  }, 600);
+}
+
+function endGame() {
+  document.getElementById('screen-game').style.display = 'none';
+  document.getElementById('screen-result').style.display = 'block';
+  
+  let winner = "Draw";
+  if (scores[1] > scores[2]) winner = "Player 1 Wins!";
+  if (scores[2] > scores[1]) winner = (gameMode === 'cpu' ? "CPU Wins!" : "Player 2 Wins!");
+  
+  document.getElementById('final-results').innerHTML = `
+    <h2>${winner}</h2>
+    <p>Player 1 Total Points: ${scores[1]}</p>
+    <p>Player 2/CPU Total Points: ${scores[2]}</p>
+  `;
+}
+
+function downloadCSV() {
+  let csv = "Trial,ConflictCondition,LatencyUnits,LatencyMs,Accuracy,Subject,SpanDirection,DigitLength\n";
+  logData.forEach(r => {
+    csv += `${r.Trial},${r.ConflictCondition},${r.LatencyUnits},${r.LatencyMs},${r.Accuracy},${r.Subject},${r.SpanDirection},${r.DigitLength}\n`;
+  });
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = window.URL.createObjectURL(blob);
+  a.download = `ulct_experiment_data_${Date.now()}.csv`;
+  a.click();
+}
+</script>
+</body>
+</html>
